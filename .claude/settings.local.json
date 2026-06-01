@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"c:/Users/Admin/Desktop/WR2.1/client/app/websites/new\" \"c:/Users/Admin/Desktop/WR2.1/client/app/websites/[id]/scans/[scanId]\" \"c:/Users/Admin/Desktop/WR2.1/client/components\" \"c:/Users/Admin/Desktop/WR2.1/client/lib\" && echo \"done\")",
+      "Bash(npm install *)",
+      "Bash(docker exec *)",
+      "Bash(curl -s http://localhost:5000/status)",
+      "Bash(curl -sv http://localhost:5000/status)",
+      "Bash(curl -sv http://localhost:5000/health)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(Get-Process -Id 8784)",
+      "PowerShell(Get-Process -Id 8784)",
+      "PowerShell(Get-Process -Id 8784 -ErrorAction SilentlyContinue)",
+      "Bash(curl -s -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hj04zWl196z2-SBc0' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hj04zWl196z2-SBc0' http://localhost:5000/bucket)",
+      "Bash(node -e ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Admin\\Desktop\\WR2.1\\client\\app\\websites\\[id]\\scans"
+    ]
+  }
+}

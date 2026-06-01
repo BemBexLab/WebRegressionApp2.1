@@ -1,0 +1,215 @@
+import { Job, Queue } from "bullmq";
+import { PrismaClient } from "@prisma/client";
+import { takeScreenshot } from "../lib/browser";
+import { compareScreenshots } from "../lib/compare";
+import { uploadImage, downloadImage, buildStorageKey } from "../lib/storage";
+import { EmailJobData } from "./email";
+
+const prisma = new PrismaClient();
+
+async function updateScanRunIfPresent(
+  scanRunId: string,
+  data: Parameters<typeof prisma.scanRun.updateMany>[0]["data"]
+): Promise<boolean> {
+  const result = await prisma.scanRun.updateMany({
+    where: { id: scanRunId },
+    data,
+  });
+
+  return result.count > 0;
+}
+
+async function updatePageResultIfPresent(
+  pageResultId: string,
+  data: Parameters<typeof prisma.scanPageResult.updateMany>[0]["data"]
+): Promise<boolean> {
+  const result = await prisma.scanPageResult.updateMany({
+    where: { id: pageResultId },
+    data,
+  });
+
+  return result.count > 0;
+}
+
+export interface ScanJobData {
+  websiteId: string;
+  scanRunId: string;
+}
+
+export async function processScan(job: Job<ScanJobData>, emailQueue: Queue): Promise<void> {
+  const { websiteId, scanRunId } = job.data;
+
+  const started = await updateScanRunIfPresent(scanRunId, {
+    status: "RUNNING",
+    startedAt: new Date(),
+  });
+
+  if (!started) {
+    console.warn(`[scan] ScanRun ${scanRunId} no longer exists; skipping job ${job.id}`);
+    return;
+  }
+
+  const scanRun = await prisma.scanRun.findUnique({
+    where: { id: scanRunId },
+    include: {
+      website: { include: { scanConfig: true } },
+      pageResults: {
+        include: {
+          page: {
+            include: {
+              baselineImages: { take: 1, orderBy: { createdAt: "desc" } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!scanRun) {
+    console.warn(`[scan] ScanRun ${scanRunId} disappeared before processing; skipping`);
+    return;
+  }
+
+  const config = scanRun.website.scanConfig;
+  const threshold = config?.threshold ?? 0.01;
+  const viewportWidth = config?.viewportWidth ?? 1280;
+  const viewportHeight = config?.viewportHeight ?? 720;
+
+  let hasError = false;
+  let changedPages = 0;
+
+  for (let i = 0; i < scanRun.pageResults.length; i++) {
+    const result = scanRun.pageResults[i];
+    const page = result.page;
+    const baseline = page.baselineImages[0];
+
+    await job.updateProgress(Math.round((i / scanRun.pageResults.length) * 100));
+
+    try {
+      const pageMarkedRunning = await updatePageResultIfPresent(result.id, { status: "RUNNING" });
+
+      if (!pageMarkedRunning) {
+        console.warn(
+          `[scan] Page result ${result.id} no longer exists for scan ${scanRunId}; skipping page ${page.url}`
+        );
+        continue;
+      }
+
+      const capture = await takeScreenshot({
+        url: page.url,
+        viewportWidth,
+        viewportHeight,
+      });
+
+      const screenshotKey = buildStorageKey(websiteId, page.id, "screenshot", scanRunId);
+      const screenshotUrl = await uploadImage(screenshotKey, capture.displayBuffer);
+
+      let diffScore = 0;
+      let diffPixels = 0;
+      let hasChanges = false;
+      let diffKey: string | undefined;
+      let diffUrl: string | undefined;
+      let baselineUrl: string | undefined;
+      let baselineKey: string | undefined;
+      let pageError: string | undefined;
+
+      if (baseline) {
+        const baselineBuffer = await downloadImage(baseline.storageKey);
+        baselineKey = baseline.storageKey;
+        baselineUrl = baseline.url;
+
+        const comparison = await compareScreenshots(
+          baselineBuffer,
+          capture.compareBuffer,
+          threshold
+        );
+        diffScore = comparison.diffScore;
+        diffPixels = comparison.diffPixels;
+        hasChanges = comparison.hasChanges;
+
+        if (hasChanges) {
+          diffKey = buildStorageKey(websiteId, page.id, "diff", scanRunId);
+          diffUrl = await uploadImage(diffKey, comparison.diffImageBuffer);
+          changedPages++;
+        }
+      } else {
+        baselineKey = buildStorageKey(websiteId, page.id, "baseline");
+        baselineUrl = await uploadImage(baselineKey, capture.compareBuffer);
+        await prisma.baselineImage.deleteMany({ where: { pageId: page.id } });
+        await prisma.baselineImage.create({
+          data: {
+            pageId: page.id,
+            storageKey: baselineKey,
+            url: baselineUrl,
+            width: viewportWidth,
+            height: viewportHeight,
+          },
+        });
+        hasChanges = true;
+        changedPages++;
+        pageError = "New page discovered during scan. Baseline created automatically.";
+      }
+
+      await prisma.scanPageResult.updateMany({
+        where: { id: result.id },
+        data: {
+          status: "COMPLETED",
+          screenshotKey,
+          screenshotUrl,
+          baselineKey,
+          baselineUrl,
+          diffKey,
+          diffUrl,
+          diffScore,
+          diffPixels,
+          hasChanges,
+          error: pageError,
+        },
+      });
+    } catch (err) {
+      hasError = true;
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`Scan failed for page ${page.url}:`, errorMsg);
+
+      const pageMarkedFailed = await updatePageResultIfPresent(result.id, {
+        status: "FAILED",
+        error: errorMsg,
+      });
+
+      if (!pageMarkedFailed) {
+        console.warn(
+          `[scan] Page result ${result.id} was removed before failure status could be saved`
+        );
+      }
+    }
+  }
+
+  const finalStatus = hasError ? "FAILED" : "COMPLETED";
+  const finalised = await updateScanRunIfPresent(scanRunId, {
+    status: finalStatus,
+    completedAt: new Date(),
+  });
+
+  if (!finalised) {
+    console.warn(`[scan] ScanRun ${scanRunId} was removed before completion could be saved`);
+    return;
+  }
+
+  await job.updateProgress(100);
+
+  const notificationEmail = process.env.NOTIFICATION_EMAIL;
+  if (notificationEmail) {
+    const emailData: EmailJobData = {
+      type: hasError ? "FAILURE" : changedPages > 0 ? "VISUAL_CHANGE" : "SCAN_COMPLETE",
+      websiteId,
+      scanRunId,
+      recipient: notificationEmail,
+      websiteName: scanRun.website.name,
+      changedPages,
+      totalPages: scanRun.pageResults.length,
+      error: hasError ? "One or more pages failed to scan" : undefined,
+    };
+
+    await emailQueue.add("email", emailData);
+  }
+}

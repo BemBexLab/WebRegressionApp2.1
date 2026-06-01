@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(New-Item -ItemType File -Path \"c:\\\\Users\\\\Admin\\\\Desktop\\\\WR2.1\\\\postgres\\\\init\\\\01-supabase-roles.sql\" -Force)",
+      "Bash(Out-Null)",
+      "Bash(Set-Content -Path 'c:\\\\Users\\\\Admin\\\\Desktop\\\\WR2.1\\\\postgres\\\\init\\\\01-supabase-roles.sql' -Encoding utf8 -Value '@ *)",
+      "PowerShell(New-Item -ItemType File -Path \"c:\\\\Users\\\\Admin\\\\Desktop\\\\WR2.1\\\\postgres\\\\init\\\\01-supabase-roles.sql\" -Force)",
+      "Bash(docker compose *)"
+    ]
+  }
+}

@@ -1,0 +1,151 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Website {
+  id          String   @id @default(cuid())
+  name        String
+  url         String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pages              WebsitePage[]
+  scanConfig         ScanConfig?
+  scanRuns           ScanRun[]
+  emailNotifications EmailNotification[]
+
+  @@map("websites")
+}
+
+model WebsitePage {
+  id        String   @id @default(cuid())
+  websiteId String
+  name      String?
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  website        Website          @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  scanResults    ScanPageResult[]
+  baselineImages BaselineImage[]
+
+  @@map("website_pages")
+}
+
+model ScanConfig {
+  id            String   @id @default(cuid())
+  websiteId     String   @unique
+  intervalHours Int      @default(5)
+  threshold     Float    @default(0.01)
+  viewportWidth Int      @default(1280)
+  viewportHeight Int     @default(720)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("scan_configs")
+}
+
+model ScanRun {
+  id          String    @id @default(cuid())
+  websiteId   String
+  type        ScanType
+  status      ScanStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  website     Website          @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  pageResults ScanPageResult[]
+
+  @@map("scan_runs")
+}
+
+model ScanPageResult {
+  id            String     @id @default(cuid())
+  scanRunId     String
+  pageId        String
+  status        ScanStatus @default(PENDING)
+  screenshotKey String?
+  screenshotUrl String?
+  baselineKey   String?
+  baselineUrl   String?
+  diffKey       String?
+  diffUrl       String?
+  diffScore     Float?
+  diffPixels    Int?
+  hasChanges    Boolean    @default(false)
+  error         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  scanRun ScanRun     @relation(fields: [scanRunId], references: [id], onDelete: Cascade)
+  page    WebsitePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@map("scan_page_results")
+}
+
+model BaselineImage {
+  id          String   @id @default(cuid())
+  pageId      String
+  storageKey  String
+  url         String
+  width       Int?
+  height      Int?
+  createdAt   DateTime @default(now())
+
+  page WebsitePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@map("baseline_images")
+}
+
+model EmailNotification {
+  id        String              @id @default(cuid())
+  websiteId String?
+  scanRunId String?
+  type      EmailNotificationType
+  recipient String
+  subject   String
+  status    EmailStatus         @default(PENDING)
+  sentAt    DateTime?
+  error     String?
+  createdAt DateTime            @default(now())
+
+  website Website? @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+
+  @@map("email_notifications")
+}
+
+enum ScanType {
+  BASELINE
+  SCAN
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EmailNotificationType {
+  SCAN_COMPLETE
+  VISUAL_CHANGE
+  FAILURE
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
