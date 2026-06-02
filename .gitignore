@@ -3,3 +3,9 @@ node_modules/
 dist/
 .next/
 *.tsbuildinfo
+client/.git/
+client/.next/
+client/node_modules/
+server/node_modules/
+server/dist/
+worker/dist/
