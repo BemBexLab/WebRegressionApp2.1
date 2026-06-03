@@ -100,6 +100,9 @@ for (const worker of [baselineWorker, scanWorker, emailWorker]) {
   worker.on("failed", (job, err) => {
     console.error(`[${worker.name}] Job ${job?.id} failed:`, err.message);
 
+    // Email delivery failures should not poison the underlying scan run.
+    if (worker.name === "email") return;
+
     const scanRunId = getScanRunId(job?.data);
     if (!scanRunId) return;
 

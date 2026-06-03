@@ -43,6 +43,9 @@ function getTransporter() {
     port: parseInt(process.env.SMTP_PORT ?? "587", 10),
     secure: (process.env.SMTP_SECURE ?? "false").toLowerCase() === "true",
     auth: { user, pass },
+    connectionTimeout: parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? "10000", 10),
+    greetingTimeout: parseInt(process.env.SMTP_GREETING_TIMEOUT_MS ?? "10000", 10),
+    socketTimeout: parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS ?? "15000", 10),
   });
 }
 

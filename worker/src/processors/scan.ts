@@ -226,7 +226,7 @@ export async function processScan(
     await emailQueue.add("email", emailData);
   }
 
-  if (!hasError && (scanRun.website.scanConfig?.enabled ?? true)) {
+  if (scanRun.website.scanConfig?.enabled ?? true) {
     const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);
     await scheduleNextScan(websiteId, nextIntervalMinutes, scanQueue);
   }
