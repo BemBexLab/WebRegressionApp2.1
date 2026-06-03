@@ -7,6 +7,7 @@ import { processScan } from "./processors/scan";
 import { processEmail } from "./processors/email";
 import { closeBrowser } from "./lib/browser";
 import { ensureBucket } from "./lib/storage";
+import { reconcileAutoScans } from "./lib/autoScan";
 
 const SCAN_CONCURRENCY = parseInt(process.env.SCAN_CONCURRENCY ?? "2", 10);
 const BASELINE_CONCURRENCY = parseInt(process.env.BASELINE_CONCURRENCY ?? "1", 10);
@@ -43,13 +44,14 @@ ensureBucket().catch((err) => {
   process.exit(1);
 });
 
+const scanQueue = new Queue("scan", { connection: redisConnection });
 const emailQueue = new Queue("email", { connection: redisConnection });
 
 const baselineWorker = new Worker(
   "baseline",
   async (job) => {
     console.log(`[baseline] Processing job ${job.id}`);
-    await processBaseline(job);
+    await processBaseline(job, scanQueue);
     console.log(`[baseline] Job ${job.id} completed`);
   },
   {
@@ -64,7 +66,7 @@ const scanWorker = new Worker(
   "scan",
   async (job) => {
     console.log(`[scan] Processing job ${job.id}`);
-    await processScan(job, emailQueue);
+    await processScan(job, { emailQueue, scanQueue });
     console.log(`[scan] Job ${job.id} completed`);
   },
   {
@@ -113,6 +115,10 @@ for (const worker of [baselineWorker, scanWorker, emailWorker]) {
 console.log(
   `Worker started — baseline concurrency: ${BASELINE_CONCURRENCY}, scan concurrency: ${SCAN_CONCURRENCY}, lock duration: ${BULLMQ_LOCK_DURATION_MS}ms`
 );
+
+reconcileAutoScans(scanQueue).catch((err) => {
+  console.error("Failed to reconcile auto-scan schedule:", err);
+});
 
 async function shutdown() {
   console.log("Shutting down workers...");

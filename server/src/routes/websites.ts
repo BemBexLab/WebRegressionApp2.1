@@ -99,7 +99,7 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       url: normalizedUrl,
       scanConfig: {
         create: {
-          intervalHours: 5,
+          intervalMinutes: 20,
           threshold: parseFloat(process.env.DIFF_THRESHOLD ?? "0.01"),
         },
       },
@@ -178,7 +178,7 @@ router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
 router.put("/:id/config", async (req: Request, res: Response): Promise<void> => {
   const id = param(req.params.id);
   const schema = z.object({
-    intervalHours: z.number().int().min(1).max(168).optional(),
+    intervalMinutes: z.number().int().min(1).max(10080).optional(),
     threshold: z.number().min(0).max(1).optional(),
     viewportWidth: z.number().int().min(320).max(3840).optional(),
     viewportHeight: z.number().int().min(240).max(2160).optional(),

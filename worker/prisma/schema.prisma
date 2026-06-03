@@ -41,7 +41,7 @@ model WebsitePage {
 model ScanConfig {
   id            String   @id @default(cuid())
   websiteId     String   @unique
-  intervalHours Int      @default(5)
+  intervalMinutes Int    @default(20)
   threshold     Float    @default(0.01)
   viewportWidth Int      @default(1280)
   viewportHeight Int     @default(720)

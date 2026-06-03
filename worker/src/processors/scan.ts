@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { takeScreenshot } from "../lib/browser";
 import { compareScreenshots } from "../lib/compare";
 import { uploadImage, downloadImage, buildStorageKey } from "../lib/storage";
+import { getAutoScanIntervalMinutes, scheduleNextScan } from "../lib/autoScan";
 import { EmailJobData } from "./email";
 
 const prisma = new PrismaClient();
@@ -36,7 +37,15 @@ export interface ScanJobData {
   scanRunId: string;
 }
 
-export async function processScan(job: Job<ScanJobData>, emailQueue: Queue): Promise<void> {
+type ScanQueues = {
+  emailQueue: Queue;
+  scanQueue: Queue;
+};
+
+export async function processScan(
+  job: Job<ScanJobData>,
+  { emailQueue, scanQueue }: ScanQueues
+): Promise<void> {
   const { websiteId, scanRunId } = job.data;
 
   const started = await updateScanRunIfPresent(scanRunId, {
@@ -71,6 +80,10 @@ export async function processScan(job: Job<ScanJobData>, emailQueue: Queue): Pro
   }
 
   const config = scanRun.website.scanConfig;
+  const intervalMinutes =
+    typeof (config as { intervalMinutes?: unknown } | null)?.intervalMinutes === "number"
+      ? ((config as { intervalMinutes?: number }).intervalMinutes ?? null)
+      : null;
   const threshold = config?.threshold ?? 0.01;
   const viewportWidth = config?.viewportWidth ?? 1280;
   const viewportHeight = config?.viewportHeight ?? 720;
@@ -198,18 +211,23 @@ export async function processScan(job: Job<ScanJobData>, emailQueue: Queue): Pro
   await job.updateProgress(100);
 
   const notificationEmail = process.env.NOTIFICATION_EMAIL;
-  if (notificationEmail) {
+  if (notificationEmail && (changedPages > 0 || hasError)) {
     const emailData: EmailJobData = {
-      type: hasError ? "FAILURE" : changedPages > 0 ? "VISUAL_CHANGE" : "SCAN_COMPLETE",
+      type: changedPages > 0 ? "VISUAL_CHANGE" : "FAILURE",
       websiteId,
       scanRunId,
       recipient: notificationEmail,
       websiteName: scanRun.website.name,
       changedPages,
       totalPages: scanRun.pageResults.length,
-      error: hasError ? "One or more pages failed to scan" : undefined,
+      error: hasError ? "One or more pages failed during the scan run." : undefined,
     };
 
     await emailQueue.add("email", emailData);
+  }
+
+  if (!hasError && (scanRun.website.scanConfig?.enabled ?? true)) {
+    const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);
+    await scheduleNextScan(websiteId, nextIntervalMinutes, scanQueue);
   }
 }

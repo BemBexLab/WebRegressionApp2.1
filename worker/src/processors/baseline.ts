@@ -1,7 +1,8 @@
-import { Job } from "bullmq";
+import { Job, Queue } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { takeScreenshot } from "../lib/browser";
 import { uploadImage, buildStorageKey } from "../lib/storage";
+import { getAutoScanIntervalMinutes, scheduleNextScan } from "../lib/autoScan";
 
 const prisma = new PrismaClient();
 
@@ -34,7 +35,10 @@ export interface BaselineJobData {
   scanRunId: string;
 }
 
-export async function processBaseline(job: Job<BaselineJobData>): Promise<void> {
+export async function processBaseline(
+  job: Job<BaselineJobData>,
+  scanQueue?: Queue
+): Promise<void> {
   const { websiteId, scanRunId } = job.data;
 
   const started = await updateScanRunIfPresent(scanRunId, {
@@ -61,6 +65,10 @@ export async function processBaseline(job: Job<BaselineJobData>): Promise<void> 
   }
 
   const config = scanRun.website.scanConfig;
+  const intervalMinutes =
+    typeof (config as { intervalMinutes?: unknown } | null)?.intervalMinutes === "number"
+      ? ((config as { intervalMinutes?: number }).intervalMinutes ?? null)
+      : null;
   const viewportWidth = config?.viewportWidth ?? 1280;
   const viewportHeight = config?.viewportHeight ?? 720;
 
@@ -150,4 +158,9 @@ export async function processBaseline(job: Job<BaselineJobData>): Promise<void> 
   }
 
   await job.updateProgress(100);
+
+  if (!hasError && scanQueue && (scanRun.website.scanConfig?.enabled ?? true)) {
+    const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);
+    await scheduleNextScan(websiteId, nextIntervalMinutes, scanQueue);
+  }
 }

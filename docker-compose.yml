@@ -91,7 +91,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       PORT: 4000
-      MAX_PAGES_PER_SITE: ${MAX_PAGES_PER_SITE:-20}
+      MAX_PAGES_PER_SITE: ${MAX_PAGES_PER_SITE:-80}
       DIFF_THRESHOLD: ${DIFF_THRESHOLD:-0.01}
     ports:
       - "4000:4000"
@@ -137,6 +137,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       FROM_EMAIL: ${FROM_EMAIL:-noreply@webregression.local}
       NOTIFICATION_EMAIL: ${NOTIFICATION_EMAIL:-}
+      AUTO_SCAN_INTERVAL_MINUTES: ${AUTO_SCAN_INTERVAL_MINUTES:-20}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     shm_size: "1gb"
     deploy:
