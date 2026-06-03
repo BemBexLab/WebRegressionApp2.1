@@ -152,14 +152,14 @@ services:
       dockerfile: Dockerfile
       args:
         ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
-        API_URL: http://api:4000
+        API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
         STORAGE_URL: http://supabase-storage:5000
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     environment:
-      API_URL: http://api:4000
+      API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       STORAGE_URL: http://supabase-storage:5000
     ports:
