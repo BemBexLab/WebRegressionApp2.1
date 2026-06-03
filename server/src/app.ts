@@ -14,10 +14,34 @@ const allowedOrigins = (process.env.FRONTEND_URL ?? "http://localhost:3000")
   .map((o) => o.trim())
   .filter(Boolean);
 
+function isAllowedOrigin(origin: string): boolean {
+  if (allowedOrigins.includes("*")) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  try {
+    const requested = new URL(origin);
+
+    return allowedOrigins.some((allowedOrigin) => {
+      try {
+        const allowed = new URL(allowedOrigin);
+        return (
+          requested.protocol === allowed.protocol &&
+          requested.hostname === allowed.hostname &&
+          (!allowed.port || requested.port === allowed.port)
+        );
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      if (!origin || isAllowedOrigin(origin)) return cb(null, true);
       cb(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
