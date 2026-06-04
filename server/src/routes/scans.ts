@@ -3,11 +3,33 @@ import { prisma } from "../lib/prisma";
 import { baselineQueue, scanQueue } from "../queues/index";
 import { scanLimiter } from "../middleware/rateLimiter";
 import { syncWebsitePages } from "../lib/siteDiscovery";
+import { createScanPdfBuffer, ScanReportPage } from "../lib/scanReport";
 
 const router = Router({ mergeParams: true });
 
 function param(p: string | string[]): string {
   return Array.isArray(p) ? p[0] : p;
+}
+
+async function activatePendingScanRun(
+  websiteId: string,
+  scanRunId: string
+): Promise<boolean> {
+  const jobId = `scan-${scanRunId}`;
+  const existingJob = await scanQueue.getJob(jobId);
+
+  if (!existingJob) {
+    await scanQueue.add("scan", { websiteId, scanRunId }, { jobId });
+    return true;
+  }
+
+  const state = await existingJob.getState();
+  if (state === "delayed") {
+    await existingJob.promote();
+    return true;
+  }
+
+  return false;
 }
 
 router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promise<void> => {
@@ -28,6 +50,21 @@ router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promi
   });
 
   if (running) {
+    if (
+      running.type === "SCAN" &&
+      running.status === "PENDING" &&
+      running.startedAt === null
+    ) {
+      const activated = await activatePendingScanRun(websiteId, running.id);
+      if (activated) {
+        res.status(202).json({
+          scanRunId: running.id,
+          message: "Scheduled scan activated and will run now",
+        });
+        return;
+      }
+    }
+
     res.status(409).json({ error: "A scan is already running for this website" });
     return;
   }
@@ -92,6 +129,21 @@ router.post("/scan", scanLimiter, async (req: Request, res: Response): Promise<v
   });
 
   if (running) {
+    if (
+      running.type === "SCAN" &&
+      running.status === "PENDING" &&
+      running.startedAt === null
+    ) {
+      const activated = await activatePendingScanRun(websiteId, running.id);
+      if (activated) {
+        res.status(202).json({
+          scanRunId: running.id,
+          message: "Scheduled scan activated and will run now",
+        });
+        return;
+      }
+    }
+
     res.status(409).json({ error: "A scan is already running for this website" });
     return;
   }
@@ -198,6 +250,70 @@ router.get("/:scanId", async (req: Request, res: Response): Promise<void> => {
   }
 
   res.json(scanRun);
+});
+
+router.get("/:scanId/export", async (req: Request, res: Response): Promise<void> => {
+  const websiteId = param(req.params.websiteId);
+  const scanId = param(req.params.scanId);
+
+  const scanRun = await prisma.scanRun.findFirst({
+    where: { id: scanId, websiteId },
+    include: {
+      website: {
+        select: {
+          name: true,
+          url: true,
+          scanConfig: { select: { threshold: true } },
+        },
+      },
+      pageResults: {
+        include: { page: { select: { id: true, name: true, url: true } } },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!scanRun) {
+    res.status(404).json({ error: "Scan run not found" });
+    return;
+  }
+
+  if (scanRun.type === "BASELINE") {
+    res.status(400).json({ error: "Baseline scans cannot be exported" });
+    return;
+  }
+
+  const allPages: ScanReportPage[] = scanRun.pageResults.map((result) => ({
+    name: result.page.name ?? result.page.url,
+    url: result.page.url,
+    status: result.status,
+    hasChanges: result.hasChanges,
+    diffScore: result.diffScore ?? 0,
+    diffPixels: result.diffPixels ?? 0,
+    diffUrl: result.diffUrl,
+    screenshotUrl: result.screenshotUrl,
+    baselineUrl: result.baselineUrl,
+    note: result.error,
+  }));
+
+  const changedPages = allPages.filter((page) => page.hasChanges);
+  const failedPages = allPages.filter((page) => page.status === "FAILED");
+  const pdfBuffer = await createScanPdfBuffer({
+    websiteName: scanRun.website.name,
+    websiteUrl: scanRun.website.url,
+    scanRunId: scanRun.id,
+    threshold: scanRun.website.scanConfig?.threshold ?? 0.01,
+    changedPages,
+    failedPages,
+    allPages,
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="scan-report-${scanRun.id}.pdf"`
+  );
+  res.send(pdfBuffer);
 });
 
 export default router;

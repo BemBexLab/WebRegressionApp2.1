@@ -20,6 +20,10 @@ const LOAD_STATE_TIMEOUT_MS = parseInt(
   process.env.SCREENSHOT_LOAD_STATE_TIMEOUT_MS ?? "15000",
   10
 );
+const CAPTURE_TIMEOUT_MS = parseInt(
+  process.env.SCREENSHOT_CAPTURE_TIMEOUT_MS ?? "45000",
+  10
+);
 const MAX_SCROLL_STEPS = parseInt(process.env.SCREENSHOT_MAX_SCROLL_STEPS ?? "24", 10);
 const FULL_PAGE_CAPTURE = (process.env.SCREENSHOT_FULL_PAGE ?? "false") === "true";
 
@@ -57,6 +61,29 @@ export interface ScreenshotOptions {
 export interface CapturedScreenshot {
   displayBuffer: Buffer;
   compareBuffer: Buffer;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function buildComparisonBuffer(primaryBuffer: Buffer, secondaryBuffer: Buffer): Buffer {
@@ -252,10 +279,15 @@ export async function takeScreenshot(opts: ScreenshotOptions): Promise<CapturedS
     await freezePageForCapture(page);
     await page.waitForTimeout(SETTLE_DELAY_MS);
 
-    const firstScreenshot = await page.screenshot({
-      fullPage: FULL_PAGE_CAPTURE,
-      type: "png",
-    });
+    const firstScreenshot = await withTimeout(
+      page.screenshot({
+        fullPage: FULL_PAGE_CAPTURE,
+        type: "png",
+        timeout: CAPTURE_TIMEOUT_MS,
+      }),
+      CAPTURE_TIMEOUT_MS + 1000,
+      `Screenshot capture for ${opts.url}`
+    );
 
     console.log(`[browser] screenshot-1 ${opts.url}`);
 
@@ -268,10 +300,15 @@ export async function takeScreenshot(opts: ScreenshotOptions): Promise<CapturedS
 
     await page.waitForTimeout(SAMPLE_GAP_MS);
 
-    const secondScreenshot = await page.screenshot({
-      fullPage: FULL_PAGE_CAPTURE,
-      type: "png",
-    });
+    const secondScreenshot = await withTimeout(
+      page.screenshot({
+        fullPage: FULL_PAGE_CAPTURE,
+        type: "png",
+        timeout: CAPTURE_TIMEOUT_MS,
+      }),
+      CAPTURE_TIMEOUT_MS + 1000,
+      `Stability screenshot capture for ${opts.url}`
+    );
 
     console.log(`[browser] screenshot-2 ${opts.url}`);
 

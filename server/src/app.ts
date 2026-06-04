@@ -4,6 +4,8 @@ import helmet from "helmet";
 import { globalLimiter } from "./middleware/rateLimiter";
 import { adminAuth } from "./middleware/auth";
 import apiRoutes from "./routes/index";
+import { prisma } from "./lib/prisma";
+import { redis } from "./lib/redis";
 
 const app = express();
 
@@ -50,8 +52,35 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(globalLimiter);
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/health", async (_req, res) => {
+  const checks = {
+    database: false,
+    redis: false,
+  };
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = true;
+  } catch (error) {
+    console.error("Health check database probe failed:", error);
+  }
+
+  try {
+    checks.redis = (await redis.ping()) === "PONG";
+  } catch (error) {
+    console.error("Health check redis probe failed:", error);
+  }
+
+  if (checks.database && checks.redis) {
+    res.json({ status: "ok", timestamp: new Date().toISOString(), checks });
+    return;
+  }
+
+  res.status(503).json({
+    status: "degraded",
+    timestamp: new Date().toISOString(),
+    checks,
+  });
 });
 
 app.use("/api", adminAuth, apiRoutes);

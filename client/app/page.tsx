@@ -16,14 +16,18 @@ function StatCard({ label, value, sub }: { label: string; value: number | string
 
 export default async function DashboardPage() {
   let stats;
+  let errorMessage = "";
   try {
     stats = await api.stats.get();
-  } catch {
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : "Unknown API error";
     return (
       <div className="p-8">
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700 text-sm">
-          Could not connect to the API server. Make sure it is running on{" "}
-          {process.env.API_URL ?? "http://localhost:4000"}.
+          <p>
+            Dashboard failed to load from {process.env.API_URL ?? "http://localhost:4000"}.
+          </p>
+          <p className="mt-2 font-medium">{errorMessage}</p>
         </div>
       </div>
     );

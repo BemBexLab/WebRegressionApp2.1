@@ -43,6 +43,14 @@ export default async function ScanDetailPage({ params }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">Scan Results</h1>
           <TypeBadge type={scan.type} />
           <StatusBadge status={scan.status} />
+          {scan.type !== "BASELINE" && scan.status !== "PENDING" && scan.status !== "RUNNING" && (
+            <a
+              href={`/api/scan-reports/${id}/${scanId}`}
+              className="ml-auto inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
+            >
+              Export PDF Report
+            </a>
+          )}
         </div>
       </div>
 
