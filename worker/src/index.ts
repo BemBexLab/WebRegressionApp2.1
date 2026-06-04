@@ -9,11 +9,11 @@ import { closeBrowser } from "./lib/browser";
 import { ensureBucket } from "./lib/storage";
 import { reconcileAutoScans } from "./lib/autoScan";
 
-const SCAN_CONCURRENCY = parseInt(process.env.SCAN_CONCURRENCY ?? "2", 10);
+const SCAN_CONCURRENCY = parseInt(process.env.SCAN_CONCURRENCY ?? "1", 10);
 const BASELINE_CONCURRENCY = parseInt(process.env.BASELINE_CONCURRENCY ?? "1", 10);
-const BULLMQ_LOCK_DURATION_MS = parseInt(process.env.BULLMQ_LOCK_DURATION_MS ?? "300000", 10);
+const BULLMQ_LOCK_DURATION_MS = parseInt(process.env.BULLMQ_LOCK_DURATION_MS ?? "900000", 10);
 const BULLMQ_STALLED_INTERVAL_MS = parseInt(
-  process.env.BULLMQ_STALLED_INTERVAL_MS ?? "60000",
+  process.env.BULLMQ_STALLED_INTERVAL_MS ?? "120000",
   10
 );
 const prisma = new PrismaClient();

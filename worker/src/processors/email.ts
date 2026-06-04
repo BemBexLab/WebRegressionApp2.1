@@ -1,7 +1,7 @@
 import { Job } from "bullmq";
 import { PrismaClient, EmailNotificationType } from "@prisma/client";
 import nodemailer from "nodemailer";
-import PDFDocument from "pdfkit";
+import { createScanPdfBuffer, ScanReportPage } from "../lib/scanReport";
 
 const prisma = new PrismaClient();
 
@@ -14,19 +14,6 @@ export type EmailJobData = {
   changedPages?: number;
   totalPages?: number;
   error?: string;
-};
-
-type ScanPageSummary = {
-  name: string;
-  url: string;
-  status: string;
-  hasChanges: boolean;
-  diffScore: number;
-  diffPixels: number;
-  diffUrl: string | null;
-  screenshotUrl: string | null;
-  baselineUrl: string | null;
-  note: string | null;
 };
 
 function getTransporter() {
@@ -53,7 +40,7 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function formatChangeType(page: ScanPageSummary): string {
+function formatChangeType(page: ScanReportPage): string {
   if (page.note?.includes("New page discovered")) return "New page detected";
   if (page.hasChanges) return "Visual difference detected";
   if (page.status === "FAILED") return "Scan failed";
@@ -82,9 +69,9 @@ function buildTextReport(
   websiteUrl: string,
   scanRunId: string,
   threshold: number,
-  changedPages: ScanPageSummary[],
-  failedPages: ScanPageSummary[],
-  allPages: ScanPageSummary[]
+  changedPages: ScanReportPage[],
+  failedPages: ScanReportPage[],
+  allPages: ScanReportPage[]
 ): string {
   const lines = [
     `Website: ${websiteName}`,
@@ -124,9 +111,9 @@ function buildHtmlReport(
   websiteUrl: string,
   scanRunId: string,
   threshold: number,
-  changedPages: ScanPageSummary[],
-  failedPages: ScanPageSummary[],
-  allPages: ScanPageSummary[]
+  changedPages: ScanReportPage[],
+  failedPages: ScanReportPage[],
+  allPages: ScanReportPage[]
 ): string {
   const changedItems =
     changedPages.length === 0
@@ -185,84 +172,6 @@ function buildHtmlReport(
   `;
 }
 
-function createPdfBuffer(
-  websiteName: string,
-  websiteUrl: string,
-  scanRunId: string,
-  threshold: number,
-  changedPages: ScanPageSummary[],
-  failedPages: ScanPageSummary[],
-  allPages: ScanPageSummary[]
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: "A4" });
-    const chunks: Buffer[] = [];
-
-    doc.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    doc.fontSize(18).text("WebRegression Scan Report");
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`Website: ${websiteName}`);
-    doc.text(`Base URL: ${websiteUrl}`);
-    doc.text(`Scan Run: ${scanRunId}`);
-    doc.text(`Threshold: ${formatPercent(threshold)}`);
-    doc.text(`Generated: ${new Date().toISOString()}`);
-    doc.moveDown();
-    doc.text(`Changed Pages: ${changedPages.length}`);
-    doc.text(`Failed Pages: ${failedPages.length}`);
-    doc.text(`Total Pages Checked: ${allPages.length}`);
-    doc.moveDown();
-
-    doc.fontSize(14).text("Changed Pages");
-    doc.moveDown(0.5);
-    if (changedPages.length === 0) {
-      doc.fontSize(11).text("No pages exceeded the configured threshold.");
-    } else {
-      for (const page of changedPages) {
-        doc.fontSize(11).text(`${page.name}`);
-        doc.fontSize(10).text(page.url);
-        doc.text(`Change type: ${formatChangeType(page)}`);
-        doc.text(`Change amount: ${formatPercent(page.diffScore)} (${page.diffPixels} pixels)`);
-        if (page.note) doc.text(`Note: ${page.note}`);
-        if (page.diffUrl) doc.text(`Diff image: ${page.diffUrl}`);
-        if (page.screenshotUrl) doc.text(`Current screenshot: ${page.screenshotUrl}`);
-        if (page.baselineUrl) doc.text(`Baseline screenshot: ${page.baselineUrl}`);
-        doc.moveDown();
-      }
-    }
-
-    if (failedPages.length > 0) {
-      doc.addPage();
-      doc.fontSize(14).text("Failed Pages");
-      doc.moveDown(0.5);
-      for (const page of failedPages) {
-        doc.fontSize(11).text(`${page.name}`);
-        doc.fontSize(10).text(page.url);
-        doc.text(`Status: ${page.status}`);
-        doc.text(`Reason: ${page.note ?? "Scan failed"}`);
-        doc.moveDown();
-      }
-    }
-
-    doc.addPage();
-    doc.fontSize(14).text("Full Page Summary");
-    doc.moveDown(0.5);
-    for (const page of allPages) {
-      doc.fontSize(11).text(`${page.name}`);
-      doc.fontSize(10).text(page.url);
-      doc.text(`Status: ${page.status}`);
-      doc.text(`Change amount: ${formatPercent(page.diffScore)} (${page.diffPixels} pixels)`);
-      doc.text(`Result: ${formatChangeType(page)}`);
-      if (page.note) doc.text(`Note: ${page.note}`);
-      doc.moveDown();
-    }
-
-    doc.end();
-  });
-}
-
 function toNotificationType(type: EmailJobData["type"]): EmailNotificationType {
   if (type === "FAILURE") return "FAILURE";
   if (type === "VISUAL_CHANGE") return "VISUAL_CHANGE";
@@ -294,7 +203,7 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
   }
 
   const threshold = website.scanConfig?.threshold ?? 0.01;
-  const allPages: ScanPageSummary[] = scanRun.pageResults.map((result) => ({
+  const allPages: ScanReportPage[] = scanRun.pageResults.map((result) => ({
     name: result.page.name ?? result.page.url,
     url: result.page.url,
     status: result.status,
@@ -329,15 +238,15 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
     failedPages,
     allPages
   );
-  const pdfBuffer = await createPdfBuffer(
+  const pdfBuffer = await createScanPdfBuffer({
     websiteName,
-    website.url,
+    websiteUrl: website.url,
     scanRunId,
     threshold,
     changedPages,
     failedPages,
-    allPages
-  );
+    allPages,
+  });
 
   const notification = await prisma.emailNotification.create({
     data: {

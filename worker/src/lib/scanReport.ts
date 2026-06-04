@@ -98,8 +98,7 @@ async function fetchImageBuffer(url: string | null): Promise<Buffer | null> {
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.startsWith("image/")) return null;
 
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    return Buffer.from(await response.arrayBuffer());
   } catch {
     return null;
   }

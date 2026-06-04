@@ -4,9 +4,14 @@ import { takeScreenshot } from "../lib/browser";
 import { compareScreenshots } from "../lib/compare";
 import { uploadImage, downloadImage, buildStorageKey } from "../lib/storage";
 import { getAutoScanIntervalMinutes, scheduleNextScan } from "../lib/autoScan";
+import { pruneOldScans } from "../lib/pruneScans";
 import { EmailJobData } from "./email";
 
 const prisma = new PrismaClient();
+
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 async function updateScanRunIfPresent(
   scanRunId: string,
@@ -113,9 +118,11 @@ export async function processScan(
         viewportWidth,
         viewportHeight,
       });
+      await yieldToEventLoop();
 
       const screenshotKey = buildStorageKey(websiteId, page.id, "screenshot", scanRunId);
       const screenshotUrl = await uploadImage(screenshotKey, capture.displayBuffer);
+      await yieldToEventLoop();
 
       let diffScore = 0;
       let diffPixels = 0;
@@ -136,6 +143,7 @@ export async function processScan(
           capture.compareBuffer,
           threshold
         );
+        await yieldToEventLoop();
         diffScore = comparison.diffScore;
         diffPixels = comparison.diffPixels;
         hasChanges = comparison.hasChanges;
@@ -143,6 +151,7 @@ export async function processScan(
         if (hasChanges) {
           diffKey = buildStorageKey(websiteId, page.id, "diff", scanRunId);
           diffUrl = await uploadImage(diffKey, comparison.diffImageBuffer);
+          await yieldToEventLoop();
           changedPages++;
         }
       } else {
@@ -161,6 +170,7 @@ export async function processScan(
         hasChanges = true;
         changedPages++;
         pageError = "New page discovered during scan. Baseline created automatically.";
+        await yieldToEventLoop();
       }
 
       await prisma.scanPageResult.updateMany({
@@ -179,6 +189,7 @@ export async function processScan(
           error: pageError,
         },
       });
+      await yieldToEventLoop();
     } catch (err) {
       hasError = true;
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -229,5 +240,11 @@ export async function processScan(
   if (scanRun.website.scanConfig?.enabled ?? true) {
     const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);
     await scheduleNextScan(websiteId, nextIntervalMinutes, scanQueue);
+  }
+
+  try {
+    await pruneOldScans(prisma, websiteId);
+  } catch (err) {
+    console.error(`[scan] Failed to prune old scans for website ${websiteId}:`, err);
   }
 }

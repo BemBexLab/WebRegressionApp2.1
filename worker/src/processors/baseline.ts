@@ -3,8 +3,13 @@ import { PrismaClient } from "@prisma/client";
 import { takeScreenshot } from "../lib/browser";
 import { uploadImage, buildStorageKey } from "../lib/storage";
 import { getAutoScanIntervalMinutes, scheduleNextScan } from "../lib/autoScan";
+import { pruneOldScans } from "../lib/pruneScans";
 
 const prisma = new PrismaClient();
+
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 async function updateScanRunIfPresent(
   scanRunId: string,
@@ -99,11 +104,13 @@ export async function processBaseline(
         viewportHeight,
         stabilizeComparison: false,
       });
+      await yieldToEventLoop();
 
       const storageKey = buildStorageKey(websiteId, page.id, "baseline");
       const url = await uploadImage(storageKey, capture.compareBuffer);
       const screenshotKey = buildStorageKey(websiteId, page.id, "screenshot", scanRunId);
       const screenshotUrl = await uploadImage(screenshotKey, capture.displayBuffer);
+      await yieldToEventLoop();
 
       await prisma.$transaction([
         prisma.baselineImage.deleteMany({ where: { pageId: page.id } }),
@@ -127,6 +134,7 @@ export async function processBaseline(
           },
         }),
       ]);
+      await yieldToEventLoop();
 
       console.log(`[baseline] Scan ${scanRunId} saved baseline for ${page.url}`);
     } catch (err) {
@@ -162,5 +170,11 @@ export async function processBaseline(
   if (!hasError && scanQueue && (scanRun.website.scanConfig?.enabled ?? true)) {
     const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);
     await scheduleNextScan(websiteId, nextIntervalMinutes, scanQueue);
+  }
+
+  try {
+    await pruneOldScans(prisma, websiteId);
+  } catch (err) {
+    console.error(`[baseline] Failed to prune old scans for website ${websiteId}:`, err);
   }
 }

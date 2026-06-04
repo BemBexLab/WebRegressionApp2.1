@@ -12,7 +12,16 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    serverActions: { allowedOrigins: ["localhost:3000", "localhost:3001", "localhost"] },
+    serverActions: {
+      allowedOrigins: [
+        "localhost:3000",
+        "localhost:3001",
+        "localhost",
+        "203.161.44.35",
+        "203.161.44.35:3001",
+        "203.161.44.35:80",
+      ],
+    },
   },
   async rewrites() {
     return [
