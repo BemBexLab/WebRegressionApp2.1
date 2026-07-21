@@ -9,11 +9,18 @@ datasource db {
 }
 
 model Website {
-  id          String   @id @default(cuid())
-  name        String
-  url         String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  name                 String
+  url                  String
+  domainName           String?
+  domainRegisteredAt   DateTime?
+  domainExpiresAt      DateTime?
+  domainLastCheckedAt  DateTime?
+  domainCheckError     String?
+  domainExpiryAlertDays Int?
+  domainExpiryAlertedAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   pages              WebsitePage[]
   scanConfig         ScanConfig?
@@ -142,6 +149,7 @@ enum EmailNotificationType {
   SCAN_COMPLETE
   VISUAL_CHANGE
   FAILURE
+  DOMAIN_EXPIRY
 }
 
 enum EmailStatus {

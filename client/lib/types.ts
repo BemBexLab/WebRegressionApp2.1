@@ -1,6 +1,10 @@
 export type ScanStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 export type ScanType = "BASELINE" | "SCAN";
-export type EmailNotificationType = "SCAN_COMPLETE" | "VISUAL_CHANGE" | "FAILURE";
+export type EmailNotificationType =
+  | "SCAN_COMPLETE"
+  | "VISUAL_CHANGE"
+  | "FAILURE"
+  | "DOMAIN_EXPIRY";
 
 export interface ScanConfig {
   id: string;
@@ -33,6 +37,11 @@ export interface Website {
   id: string;
   name: string;
   url: string;
+  domainName: string | null;
+  domainRegisteredAt: string | null;
+  domainExpiresAt: string | null;
+  domainLastCheckedAt: string | null;
+  domainCheckError: string | null;
   createdAt: string;
   updatedAt: string;
   nextScanAt?: string | null;

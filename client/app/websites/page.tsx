@@ -6,6 +6,11 @@ import { StatusBadge } from "../../components/StatusBadge";
 
 export const dynamic = "force-dynamic";
 
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "Unavailable";
+  return new Date(value).toLocaleDateString();
+}
+
 export default async function WebsitesPage() {
   let websites: Website[] = [];
   try {
@@ -51,6 +56,10 @@ export default async function WebsitesPage() {
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold text-gray-900 truncate">{site.name}</h2>
                   <p className="text-sm text-gray-400 truncate mt-0.5">{site.url}</p>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                    <span>Purchased: {formatDate(site.domainRegisteredAt)}</span>
+                    <span>Expires: {formatDate(site.domainExpiresAt)}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-xs text-gray-400">{site.pageCount} page(s)</span>
@@ -64,6 +73,11 @@ export default async function WebsitesPage() {
               {site.lastScan && (
                 <p className="text-xs text-gray-400 mt-3">
                   Last scan: {new Date(site.lastScan.createdAt).toLocaleString()}
+                </p>
+              )}
+              {site.domainCheckError && (
+                <p className="mt-2 text-xs text-amber-600">
+                  Domain data unavailable: {site.domainCheckError}
                 </p>
               )}
               <NextScanTimer

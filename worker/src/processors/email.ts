@@ -2,28 +2,30 @@ import { Job } from "bullmq";
 import { PrismaClient, EmailNotificationType } from "@prisma/client";
 import { createScanPdfBuffer, ScanReportPage } from "../lib/scanReport";
 import { buildReportStorageKey, toPublicAppUrl, uploadFile } from "../lib/storage";
+import { postToCliq, requireCliqWebhookUrl } from "../lib/cliq";
 
 const prisma = new PrismaClient();
 
-export type EmailJobData = {
-  type: "SCAN_COMPLETE" | "VISUAL_CHANGE" | "FAILURE";
-  websiteId: string;
-  scanRunId: string;
-  recipient: string;
-  websiteName: string;
-  changedPages?: number;
-  totalPages?: number;
-  error?: string;
-};
-
-function getCliqWebhookUrl(): string {
-  const webhookUrl = process.env.CLIQ_WEBHOOK_URL?.trim();
-  if (!webhookUrl) {
-    throw new Error("Zoho Cliq is not configured. Set CLIQ_WEBHOOK_URL.");
-  }
-
-  return webhookUrl;
-}
+export type EmailJobData =
+  | {
+      type: "SCAN_COMPLETE" | "VISUAL_CHANGE" | "FAILURE";
+      websiteId: string;
+      scanRunId: string;
+      recipient: string;
+      websiteName: string;
+      changedPages?: number;
+      totalPages?: number;
+      error?: string;
+    }
+  | {
+      type: "DOMAIN_EXPIRY";
+      websiteId: string;
+      recipient: string;
+      websiteName: string;
+      domainName: string;
+      domainExpiresAt: string;
+      daysUntilExpiry: number;
+    };
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
@@ -47,6 +49,10 @@ function buildSubject(
   changedPages: number,
   totalPages: number
 ): string {
+  if (type === "DOMAIN_EXPIRY") {
+    return `[WebRegression] Domain renewal reminder for ${websiteName}`;
+  }
+
   if (type === "FAILURE") {
     return `[WebRegression] Scan failure for ${websiteName}`;
   }
@@ -91,28 +97,92 @@ function buildCliqTextReport(
 }
 
 function toNotificationType(type: EmailJobData["type"]): EmailNotificationType {
+  if (type === "DOMAIN_EXPIRY") return "DOMAIN_EXPIRY" as EmailNotificationType;
   if (type === "FAILURE") return "FAILURE";
   if (type === "VISUAL_CHANGE") return "VISUAL_CHANGE";
   return "SCAN_COMPLETE";
 }
 
-async function postToCliq(webhookUrl: string, text: string): Promise<void> {
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ text }),
-  });
+function buildDomainExpiryText(
+  websiteName: string,
+  websiteUrl: string,
+  domainName: string,
+  domainExpiresAt: string,
+  daysUntilExpiry: number
+): string {
+  const dashboardUrl = toPublicAppUrl(`/websites`);
+  const expiryDate = new Date(domainExpiresAt).toLocaleString();
 
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Cliq webhook failed (${response.status}): ${details.slice(0, 500)}`);
-  }
+  return [
+    `Website: ${websiteName}`,
+    `Base URL: ${websiteUrl}`,
+    `Domain: ${domainName}`,
+    `Expires on: ${expiryDate}`,
+    `Renewal window: ${daysUntilExpiry} day(s) remaining`,
+    `Dashboard: ${dashboardUrl}`,
+    `Action: Renew the domain before it expires.`,
+  ].join("\n");
 }
 
 export async function processEmail(job: Job<EmailJobData>): Promise<void> {
-  const { websiteId, scanRunId, websiteName, type } = job.data;
+  const { websiteId, websiteName, type } = job.data;
+
+  if (type === "DOMAIN_EXPIRY") {
+    const website = await prisma.website.findUnique({
+      where: { id: websiteId },
+      select: { url: true },
+    });
+
+    if (!website) {
+      throw new Error(`Website context missing for domain expiry alert on ${websiteId}`);
+    }
+
+    const subject = buildSubject(type, websiteName, 0, 0);
+    const text = buildDomainExpiryText(
+      websiteName,
+      website.url,
+      job.data.domainName,
+      job.data.domainExpiresAt,
+      job.data.daysUntilExpiry
+    );
+
+    const notification = await prisma.emailNotification.create({
+      data: {
+        websiteId,
+        type: toNotificationType(type),
+        recipient: "zoho-cliq",
+        subject,
+        status: "PENDING",
+      },
+    });
+
+    try {
+      await postToCliq(requireCliqWebhookUrl(), text);
+
+      await prisma.emailNotification.update({
+        where: { id: notification.id },
+        data: {
+          status: "SENT",
+          sentAt: new Date(),
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await prisma.emailNotification.update({
+        where: { id: notification.id },
+        data: {
+          status: "FAILED",
+          error: message,
+        },
+      });
+
+      throw error;
+    }
+
+    return;
+  }
+
+  const { scanRunId } = job.data;
 
   const website = await prisma.website.findUnique({
     where: { id: websiteId },
@@ -189,7 +259,7 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
   });
 
   try {
-    await postToCliq(getCliqWebhookUrl(), text);
+    await postToCliq(requireCliqWebhookUrl(), text);
 
     await prisma.emailNotification.update({
       where: { id: notification.id },

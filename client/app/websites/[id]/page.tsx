@@ -12,6 +12,22 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "Unavailable";
+  return new Date(value).toLocaleString();
+}
+
+function getExpiryWarning(expiresAt: string | null | undefined): string | null {
+  if (!expiresAt) return null;
+
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+
+  if (daysRemaining < 0) return "Domain expiry date has passed.";
+  if (daysRemaining <= 7) return `Renew soon: ${daysRemaining} day(s) remaining.`;
+  return null;
+}
+
 export default async function WebsitePage({ params }: Props) {
   const { id } = await params;
 
@@ -26,6 +42,7 @@ export default async function WebsitePage({ params }: Props) {
     (p) => p.baselineImages && p.baselineImages.length > 0
   );
   const isPaused = !(website.scanConfig?.enabled ?? true);
+  const expiryWarning = getExpiryWarning(website.domainExpiresAt);
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6">
@@ -89,6 +106,40 @@ export default async function WebsitePage({ params }: Props) {
           </div>
         </div>
       )}
+
+      <div className="rounded-xl border border-gray-200 bg-white px-6 py-4">
+        <h2 className="text-sm font-semibold text-gray-900">Domain Lifecycle</h2>
+        <div className="mt-3 grid gap-3 text-sm text-gray-600 md:grid-cols-2">
+          <div>
+            <span className="text-gray-400">Domain</span>
+            <p className="font-medium text-gray-800">
+              {website.domainName ?? new URL(website.url).hostname}
+            </p>
+          </div>
+          <div>
+            <span className="text-gray-400">Purchased / Registered</span>
+            <p className="font-medium text-gray-800">{formatDate(website.domainRegisteredAt)}</p>
+          </div>
+          <div>
+            <span className="text-gray-400">Expires</span>
+            <p className="font-medium text-gray-800">{formatDate(website.domainExpiresAt)}</p>
+          </div>
+          <div>
+            <span className="text-gray-400">Last checked</span>
+            <p className="font-medium text-gray-800">{formatDate(website.domainLastCheckedAt)}</p>
+          </div>
+        </div>
+        {expiryWarning && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {expiryWarning}
+          </p>
+        )}
+        {website.domainCheckError && (
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Domain lookup note: {website.domainCheckError}
+          </p>
+        )}
+      </div>
 
       <PageList websiteId={website.id} initialPages={website.pages ?? []} />
 

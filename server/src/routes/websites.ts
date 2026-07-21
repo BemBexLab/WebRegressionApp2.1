@@ -1,8 +1,10 @@
 import { Router, Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { syncWebsitePages } from "../lib/siteDiscovery";
 import { baselineQueue, scanQueue } from "../queues/index";
+import { resolveDomainLifecycle } from "../lib/domainLifecycle";
 
 const router = Router();
 
@@ -31,6 +33,63 @@ type WebsiteScanConfigSummary = {
   enabled: boolean;
   intervalMinutes?: number | null;
 };
+
+function buildWebsiteDomainUpdate(data: {
+  domainName: string | null;
+  domainRegisteredAt: Date | null;
+  domainExpiresAt: Date | null;
+  domainLastCheckedAt: Date;
+  domainCheckError: string | null;
+  domainExpiryAlertDays: number | null;
+  domainExpiryAlertedAt: Date | null;
+}): Prisma.WebsiteUpdateInput {
+  return {
+    domainName: data.domainName,
+    domainRegisteredAt: data.domainRegisteredAt,
+    domainExpiresAt: data.domainExpiresAt,
+    domainLastCheckedAt: data.domainLastCheckedAt,
+    domainCheckError: data.domainCheckError,
+    domainExpiryAlertDays: data.domainExpiryAlertDays,
+    domainExpiryAlertedAt: data.domainExpiryAlertedAt,
+  };
+}
+
+async function refreshWebsiteDomainData(
+  websiteId: string,
+  websiteUrl: string
+): Promise<void> {
+  const checkedAt = new Date();
+
+  try {
+    const domain = await resolveDomainLifecycle(websiteUrl);
+    await prisma.website.update({
+      where: { id: websiteId },
+      data: buildWebsiteDomainUpdate({
+        domainName: domain.domainName,
+        domainRegisteredAt: domain.registeredAt,
+        domainExpiresAt: domain.expiresAt,
+        domainLastCheckedAt: checkedAt,
+        domainCheckError: null,
+        domainExpiryAlertDays: null,
+        domainExpiryAlertedAt: null,
+      }),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Domain registration lookup failed";
+    await prisma.website.update({
+      where: { id: websiteId },
+      data: buildWebsiteDomainUpdate({
+        domainName: null,
+        domainRegisteredAt: null,
+        domainExpiresAt: null,
+        domainLastCheckedAt: checkedAt,
+        domainCheckError: message,
+        domainExpiryAlertDays: null,
+        domainExpiryAlertedAt: null,
+      }),
+    });
+  }
+}
 
 function getEffectiveIntervalMinutes(scanConfig?: WebsiteScanConfigSummary | null): number {
   const envValue = parseInt(process.env.AUTO_SCAN_INTERVAL_MINUTES ?? "", 10);
@@ -373,9 +432,14 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
 
   try {
     const synced = await syncWebsitePages(website.id, normalizedUrl, homepageOnly);
+    await refreshWebsiteDomainData(website.id, normalizedUrl);
+    const hydratedWebsite = await prisma.website.findUnique({
+      where: { id: website.id },
+      include: { scanConfig: true },
+    });
 
     res.status(201).json({
-      ...website,
+      ...(hydratedWebsite ?? website),
       pages: synced.pages,
     });
   } catch (error) {
@@ -415,9 +479,14 @@ router.put("/:id", async (req: Request, res: Response): Promise<void> => {
       parsed.data.url || updated.pages.length === 0
         ? await syncWebsitePages(updated.id, updated.url)
         : { pages: updated.pages, discovered: updated.pages.length };
+    await refreshWebsiteDomainData(updated.id, updated.url);
+    const hydratedWebsite = await prisma.website.findUnique({
+      where: { id: updated.id },
+      include: { scanConfig: true, pages: true },
+    });
 
     res.json({
-      ...updated,
+      ...(hydratedWebsite ?? updated),
       pages: synced.pages,
     });
   } catch (error) {
