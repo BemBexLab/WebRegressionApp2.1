@@ -5,7 +5,7 @@ import { globalLimiter } from "./middleware/rateLimiter";
 import { adminAuth } from "./middleware/auth";
 import apiRoutes from "./routes/index";
 import { prisma } from "./lib/prisma";
-import { redis } from "./lib/redis";
+import { probeRedis } from "./lib/redis";
 
 const app = express();
 
@@ -66,7 +66,7 @@ app.get("/health", async (_req, res) => {
   }
 
   try {
-    checks.redis = (await redis.ping()) === "PONG";
+    checks.redis = await probeRedis();
   } catch (error) {
     console.error("Health check redis probe failed:", error);
   }

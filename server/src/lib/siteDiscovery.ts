@@ -124,8 +124,25 @@ export async function crawlWebsite(startUrl: string): Promise<CrawledPage[]> {
 
 export async function syncWebsitePages(
   websiteId: string,
-  websiteUrl: string
+  websiteUrl: string,
+  homepageOnly = false
 ): Promise<{ pages: Array<{ id: string; url: string; name: string | null }>; discovered: number }> {
+  if (homepageOnly) {
+    const normalizedUrl = normalizeUrl(websiteUrl) ?? websiteUrl.replace(/\/$/, "");
+    const existing = await prisma.websitePage.findFirst({
+      where: { websiteId, url: normalizedUrl },
+      select: { id: true, url: true, name: true },
+    });
+    if (existing) {
+      return { pages: [existing], discovered: 1 };
+    }
+    const created = await prisma.websitePage.create({
+      data: { websiteId, url: normalizedUrl, name: "Homepage" },
+      select: { id: true, url: true, name: true },
+    });
+    return { pages: [created], discovered: 1 };
+  }
+
   const discoveredPages = await crawlWebsite(websiteUrl);
 
   if (discoveredPages.length === 0) {

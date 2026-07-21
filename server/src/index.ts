@@ -1,7 +1,7 @@
 import "dotenv/config";
 import app from "./app";
 import { prisma } from "./lib/prisma";
-import { redis } from "./lib/redis";
+import { probeRedis } from "./lib/redis";
 
 const PORT = parseInt(process.env.PORT ?? "4000", 10);
 
@@ -9,12 +9,17 @@ async function main() {
   await prisma.$connect();
   console.log("PostgreSQL connected");
 
-  await redis.ping();
-  console.log("Redis connected");
-
   app.listen(PORT, () => {
     console.log(`API server running on port ${PORT}`);
   });
+
+  probeRedis()
+    .then(() => {
+      console.log("Redis connected");
+    })
+    .catch((err) => {
+      console.error("Redis startup probe failed:", err);
+    });
 }
 
 main().catch((err) => {
@@ -24,6 +29,5 @@ main().catch((err) => {
 
 process.on("SIGTERM", async () => {
   await prisma.$disconnect();
-  redis.disconnect();
   process.exit(0);
 });

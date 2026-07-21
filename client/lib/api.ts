@@ -9,12 +9,15 @@ import {
 const INTERNAL_API_URL = process.env.API_URL ?? "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 
-function getBaseUrl(): string {
-  return typeof window === "undefined" ? INTERNAL_API_URL : "";
+function isServerRequest(): boolean {
+  return typeof window === "undefined";
 }
 
 function authHeaders(): HeadersInit {
-  if (!ADMIN_PASSWORD) return { "Content-Type": "application/json" };
+  if (!isServerRequest() || !ADMIN_PASSWORD) {
+    return { "Content-Type": "application/json" };
+  }
+
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${ADMIN_PASSWORD}`,
@@ -22,9 +25,14 @@ function authHeaders(): HeadersInit {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${getBaseUrl()}/api${path}`, {
+  const requestUrl = isServerRequest()
+    ? `${INTERNAL_API_URL}/api${path}`
+    : `/app-api${path}`;
+
+  const res = await fetch(requestUrl, {
     ...init,
     headers: { ...authHeaders(), ...init?.headers },
+    cache: "no-store",
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -42,7 +50,7 @@ export const api = {
   websites: {
     list: () => request<Website[]>("/websites"),
     get: (id: string) => request<Website>(`/websites/${id}`),
-    create: (data: { name: string; url: string }) =>
+    create: (data: { name: string; url: string; homepageOnly?: boolean }) =>
       request<Website>("/websites", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: Partial<{ name: string; url: string }>) =>
       request<Website>(`/websites/${id}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -52,6 +60,16 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(data),
       }),
+    pause: (id: string) =>
+      request<{ config: ScanConfig; removedPendingRuns: number; message: string }>(
+        `/websites/${id}/pause`,
+        { method: "POST" }
+      ),
+    resume: (id: string) =>
+      request<{ config: ScanConfig; scheduledScanRunId: string | null; message: string }>(
+        `/websites/${id}/resume`,
+        { method: "POST" }
+      ),
   },
 
   pages: {

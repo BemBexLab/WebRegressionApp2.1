@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "../../../lib/api";
+import NextScanTimer from "../../../components/NextScanTimer";
 import { StatusBadge, TypeBadge } from "../../../components/StatusBadge";
 import WebsiteActions from "../../../components/WebsiteActions";
 import PageList from "../../../components/PageList";
@@ -24,13 +25,16 @@ export default async function WebsitePage({ params }: Props) {
   const hasBaseline = (website.pages ?? []).some(
     (p) => p.baselineImages && p.baselineImages.length > 0
   );
+  const isPaused = !(website.scanConfig?.enabled ?? true);
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-            <Link href="/websites" className="hover:text-gray-600">Websites</Link>
+          <div className="mb-1 flex items-center gap-2 text-sm text-gray-400">
+            <Link href="/websites" className="hover:text-gray-600">
+              Websites
+            </Link>
             <span>/</span>
             <span className="text-gray-700">{website.name}</span>
           </div>
@@ -39,20 +43,26 @@ export default async function WebsitePage({ params }: Props) {
             href={website.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-blue-600 hover:underline mt-0.5 inline-block"
+            className="mt-0.5 inline-block text-sm text-blue-600 hover:underline"
           >
-            {website.url} ↗
+            {website.url} {"->"}
           </a>
+          <div className="mt-3 max-w-sm">
+            <NextScanTimer
+              nextScanAt={website.nextScanAt}
+              nextScanStatus={website.nextScanStatus}
+            />
+          </div>
         </div>
-        <WebsiteActions websiteId={website.id} hasBaseline={hasBaseline} />
+        <WebsiteActions websiteId={website.id} hasBaseline={hasBaseline} isPaused={isPaused} />
       </div>
 
       {website.scanConfig && (
-        <div className="bg-white rounded-xl border border-gray-200 px-6 py-4 flex gap-6 text-sm">
+        <div className="flex gap-6 rounded-xl border border-gray-200 bg-white px-6 py-4 text-sm">
           <div>
             <span className="text-gray-400">Scan interval</span>
             <span className="ml-2 font-medium text-gray-700">
-              Every {website.scanConfig.intervalHours}h
+              Every {website.scanConfig.intervalMinutes}m
             </span>
           </div>
           <div>
@@ -64,13 +74,17 @@ export default async function WebsitePage({ params }: Props) {
           <div>
             <span className="text-gray-400">Viewport</span>
             <span className="ml-2 font-medium text-gray-700">
-              {website.scanConfig.viewportWidth}×{website.scanConfig.viewportHeight}
+              {website.scanConfig.viewportWidth}x{website.scanConfig.viewportHeight}
             </span>
           </div>
           <div>
-            <span className="text-gray-400">Auto-scan</span>
-            <span className={`ml-2 font-medium ${website.scanConfig.enabled ? "text-green-600" : "text-gray-400"}`}>
-              {website.scanConfig.enabled ? "Enabled" : "Disabled"}
+            <span className="text-gray-400">Scan status</span>
+            <span
+              className={`ml-2 font-medium ${
+                website.scanConfig.enabled ? "text-green-600" : "text-amber-600"
+              }`}
+            >
+              {website.scanConfig.enabled ? "Active" : "Paused"}
             </span>
           </div>
         </div>
@@ -78,8 +92,8 @@ export default async function WebsitePage({ params }: Props) {
 
       <PageList websiteId={website.id} initialPages={website.pages ?? []} />
 
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-100">
+      <div className="rounded-xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">Recent Scans</h2>
         </div>
 
@@ -96,22 +110,39 @@ export default async function WebsitePage({ params }: Props) {
                 <li key={run.id}>
                   <Link
                     href={`/websites/${website.id}/scans/${run.id}`}
-                    className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-4 px-6 py-4 transition-colors hover:bg-gray-50"
                   >
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs text-gray-400">
                         {new Date(run.createdAt).toLocaleString()}
                         {run.completedAt && (
-                          <> · {Math.round((new Date(run.completedAt).getTime() - new Date(run.createdAt).getTime()) / 1000)}s</>
+                          <> {"·"}{" "}
+                            {Math.round(
+                              (new Date(run.completedAt).getTime() -
+                                new Date(run.createdAt).getTime()) /
+                                1000
+                            )}
+                            s
+                          </>
                         )}
                       </p>
-                      <p className="text-sm text-gray-600 mt-0.5">
+                      <p className="mt-0.5 text-sm text-gray-600">
                         {run.pageResults.length} page(s)
-                        {changes > 0 && <> · <span className="text-orange-600">{changes} changed</span></>}
-                        {failed > 0 && <> · <span className="text-red-600">{failed} failed</span></>}
+                        {changes > 0 && (
+                          <>
+                            {" · "}
+                            <span className="text-orange-600">{changes} changed</span>
+                          </>
+                        )}
+                        {failed > 0 && (
+                          <>
+                            {" · "}
+                            <span className="text-red-600">{failed} failed</span>
+                          </>
+                        )}
                       </p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
+                    <div className="shrink-0 flex gap-2">
                       <TypeBadge type={run.type} />
                       <StatusBadge status={run.status} />
                     </div>

@@ -51,7 +51,7 @@ const baselineWorker = new Worker(
   "baseline",
   async (job) => {
     console.log(`[baseline] Processing job ${job.id}`);
-    await processBaseline(job, scanQueue);
+    await processBaseline(job, { scanQueue, notificationQueue: emailQueue });
     console.log(`[baseline] Job ${job.id} completed`);
   },
   {

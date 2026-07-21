@@ -37,7 +37,15 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="px-5 py-4 border-t border-gray-700">
-        <p className="text-xs text-gray-500">v1.0.0</p>
+        <form action="/auth/logout" method="post">
+          <button
+            type="submit"
+            className="w-full rounded-md border border-gray-700 px-3 py-2 text-left text-xs font-medium text-gray-300 transition hover:border-gray-600 hover:bg-gray-800 hover:text-white"
+          >
+            Logout
+          </button>
+        </form>
+        <p className="mt-3 text-xs text-gray-500">v1.0.0</p>
       </div>
     </aside>
   );

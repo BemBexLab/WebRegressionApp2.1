@@ -4,6 +4,7 @@ import { takeScreenshot } from "../lib/browser";
 import { uploadImage, buildStorageKey } from "../lib/storage";
 import { getAutoScanIntervalMinutes, scheduleNextScan } from "../lib/autoScan";
 import { pruneOldScans } from "../lib/pruneScans";
+import { EmailJobData } from "./email";
 
 const prisma = new PrismaClient();
 
@@ -40,9 +41,14 @@ export interface BaselineJobData {
   scanRunId: string;
 }
 
+type BaselineQueues = {
+  scanQueue?: Queue;
+  notificationQueue?: Queue;
+};
+
 export async function processBaseline(
   job: Job<BaselineJobData>,
-  scanQueue?: Queue
+  { scanQueue, notificationQueue }: BaselineQueues = {}
 ): Promise<void> {
   const { websiteId, scanRunId } = job.data;
 
@@ -166,6 +172,25 @@ export async function processBaseline(
   }
 
   await job.updateProgress(100);
+
+  if (hasError && notificationQueue && process.env.CLIQ_WEBHOOK_URL) {
+    const failedPages = scanRun.pageResults.filter((pageResult) => pageResult.status === "FAILED");
+    const notificationData: EmailJobData = {
+      type: "FAILURE",
+      websiteId,
+      scanRunId,
+      recipient: "zoho-cliq",
+      websiteName: scanRun.website.name,
+      changedPages: 0,
+      totalPages: scanRun.pageResults.length,
+      error:
+        failedPages.length === scanRun.pageResults.length
+          ? "Website not reachable or all pages failed during baseline."
+          : "One or more pages failed during baseline.",
+    };
+
+    await notificationQueue.add("email", notificationData);
+  }
 
   if (!hasError && scanQueue && (scanRun.website.scanConfig?.enabled ?? true)) {
     const nextIntervalMinutes = getAutoScanIntervalMinutes(intervalMinutes);

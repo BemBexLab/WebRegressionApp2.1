@@ -7,11 +7,12 @@ import { api } from "../lib/api";
 interface Props {
   websiteId: string;
   hasBaseline: boolean;
+  isPaused: boolean;
 }
 
-export default function WebsiteActions({ websiteId, hasBaseline }: Props) {
+export default function WebsiteActions({ websiteId, hasBaseline, isPaused }: Props) {
   const router = useRouter();
-  const [loading, setLoading] = useState<"baseline" | "scan" | "delete" | null>(null);
+  const [loading, setLoading] = useState<"baseline" | "scan" | "pause" | "resume" | "delete" | null>(null);
   const [error, setError] = useState("");
 
   async function trigger(type: "baseline" | "scan") {
@@ -26,6 +27,24 @@ export default function WebsiteActions({ websiteId, hasBaseline }: Props) {
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function togglePause() {
+    setError("");
+    setLoading(isPaused ? "resume" : "pause");
+
+    try {
+      if (isPaused) {
+        await api.websites.resume(websiteId);
+      } else {
+        await api.websites.pause(websiteId);
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update scanning state");
     } finally {
       setLoading(null);
     }
@@ -55,7 +74,7 @@ export default function WebsiteActions({ websiteId, hasBaseline }: Props) {
       <div className="flex gap-2">
         <button
           onClick={() => trigger("baseline")}
-          disabled={!!loading}
+          disabled={!!loading || isPaused}
           className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
         >
           {loading === "baseline" ? "Queuing..." : "Create Baseline"}
@@ -63,12 +82,29 @@ export default function WebsiteActions({ websiteId, hasBaseline }: Props) {
         {hasBaseline && (
           <button
             onClick={() => trigger("scan")}
-            disabled={!!loading}
+            disabled={!!loading || isPaused}
             className="px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
           >
             {loading === "scan" ? "Queuing..." : "Run Scan"}
           </button>
         )}
+        <button
+          onClick={togglePause}
+          disabled={!!loading}
+          className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 transition-colors ${
+            isPaused
+              ? "bg-green-600 text-white hover:bg-green-700"
+              : "border border-amber-200 text-amber-700 hover:bg-amber-50"
+          }`}
+        >
+          {loading === "pause"
+            ? "Pausing..."
+            : loading === "resume"
+              ? "Resuming..."
+              : isPaused
+                ? "Resume Scans"
+                : "Pause Scans"}
+        </button>
         <button
           onClick={removeWebsite}
           disabled={!!loading}
@@ -77,6 +113,7 @@ export default function WebsiteActions({ websiteId, hasBaseline }: Props) {
           {loading === "delete" ? "Deleting..." : "Delete Website"}
         </button>
       </div>
+      {isPaused && <p className="text-sm text-amber-700">Scanning is paused for this website.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );

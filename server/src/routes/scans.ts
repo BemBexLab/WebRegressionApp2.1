@@ -15,21 +15,45 @@ async function activatePendingScanRun(
   websiteId: string,
   scanRunId: string
 ): Promise<boolean> {
-  const jobId = `scan-${scanRunId}`;
-  const existingJob = await scanQueue.getJob(jobId);
+  try {
+    const jobId = `scan-${scanRunId}`;
+    const existingJob = await scanQueue.getJob(jobId);
 
-  if (!existingJob) {
-    await scanQueue.add("scan", { websiteId, scanRunId }, { jobId });
-    return true;
+    if (!existingJob) {
+      await scanQueue.add("scan", { websiteId, scanRunId }, { jobId });
+      return true;
+    }
+
+    const state = await existingJob.getState();
+    if (state === "delayed") {
+      await existingJob.promote();
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function getExistingOrSyncedPages(
+  websiteId: string,
+  websiteUrl: string
+): Promise<{ pages: Array<{ id: string; url: string; name: string | null }>; discovered: number }> {
+  const existingPages = await prisma.websitePage.findMany({
+    where: { websiteId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, url: true, name: true },
+  });
+
+  if (existingPages.length > 0) {
+    return {
+      pages: existingPages,
+      discovered: existingPages.length,
+    };
   }
 
-  const state = await existingJob.getState();
-  if (state === "delayed") {
-    await existingJob.promote();
-    return true;
-  }
-
-  return false;
+  return syncWebsitePages(websiteId, websiteUrl);
 }
 
 router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promise<void> => {
@@ -37,11 +61,16 @@ router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promi
 
   const website = await prisma.website.findUnique({
     where: { id: websiteId },
-    select: { id: true, url: true },
+    select: { id: true, url: true, scanConfig: { select: { enabled: true } } },
   });
 
   if (!website) {
     res.status(404).json({ error: "Website not found" });
+    return;
+  }
+
+  if (!(website.scanConfig?.enabled ?? true)) {
+    res.status(409).json({ error: "Scanning is paused for this website. Resume it first." });
     return;
   }
 
@@ -71,7 +100,7 @@ router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promi
 
   let synced;
   try {
-    synced = await syncWebsitePages(websiteId, website.url);
+    synced = await getExistingOrSyncedPages(websiteId, website.url);
   } catch (error) {
     res.status(422).json({
       error: error instanceof Error ? error.message : "Failed to crawl website pages",
@@ -99,11 +128,17 @@ router.post("/baseline", scanLimiter, async (req: Request, res: Response): Promi
     include: { pageResults: true },
   });
 
-  await baselineQueue.add(
-    "baseline",
-    { websiteId, scanRunId: scanRun.id },
-    { jobId: `baseline-${scanRun.id}` }
-  );
+  try {
+    await baselineQueue.add(
+      "baseline",
+      { websiteId, scanRunId: scanRun.id },
+      { jobId: `baseline-${scanRun.id}` }
+    );
+  } catch (err) {
+    await prisma.scanRun.delete({ where: { id: scanRun.id } });
+    res.status(503).json({ error: "Queue temporarily unavailable. Please try again." });
+    return;
+  }
 
   res.status(202).json({
     scanRunId: scanRun.id,
@@ -116,11 +151,16 @@ router.post("/scan", scanLimiter, async (req: Request, res: Response): Promise<v
 
   const website = await prisma.website.findUnique({
     where: { id: websiteId },
-    select: { id: true, url: true },
+    select: { id: true, url: true, scanConfig: { select: { enabled: true } } },
   });
 
   if (!website) {
     res.status(404).json({ error: "Website not found" });
+    return;
+  }
+
+  if (!(website.scanConfig?.enabled ?? true)) {
+    res.status(409).json({ error: "Scanning is paused for this website. Resume it first." });
     return;
   }
 
@@ -150,7 +190,7 @@ router.post("/scan", scanLimiter, async (req: Request, res: Response): Promise<v
 
   let synced;
   try {
-    synced = await syncWebsitePages(websiteId, website.url);
+    synced = await getExistingOrSyncedPages(websiteId, website.url);
   } catch (error) {
     res.status(422).json({
       error: error instanceof Error ? error.message : "Failed to crawl website pages",
@@ -194,11 +234,17 @@ router.post("/scan", scanLimiter, async (req: Request, res: Response): Promise<v
     include: { pageResults: true },
   });
 
-  await scanQueue.add(
-    "scan",
-    { websiteId, scanRunId: scanRun.id },
-    { jobId: `scan-${scanRun.id}` }
-  );
+  try {
+    await scanQueue.add(
+      "scan",
+      { websiteId, scanRunId: scanRun.id },
+      { jobId: `scan-${scanRun.id}` }
+    );
+  } catch (err) {
+    await prisma.scanRun.delete({ where: { id: scanRun.id } });
+    res.status(503).json({ error: "Queue temporarily unavailable. Please try again." });
+    return;
+  }
 
   res.status(202).json({
     scanRunId: scanRun.id,
@@ -302,7 +348,7 @@ router.get("/:scanId/export", async (req: Request, res: Response): Promise<void>
     websiteName: scanRun.website.name,
     websiteUrl: scanRun.website.url,
     scanRunId: scanRun.id,
-    threshold: scanRun.website.scanConfig?.threshold ?? 0.01,
+    threshold: scanRun.website.scanConfig?.threshold ?? 0.3,
     changedPages,
     failedPages,
     allPages,

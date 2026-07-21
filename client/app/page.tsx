@@ -14,6 +14,26 @@ function StatCard({ label, value, sub }: { label: string; value: number | string
   );
 }
 
+function getRecentActivityLabel(
+  type: "BASELINE" | "SCAN",
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"
+): string {
+  const subject = type === "BASELINE" ? "Baseline" : "Scan";
+
+  switch (status) {
+    case "PENDING":
+      return `${subject} pending`;
+    case "RUNNING":
+      return `${subject} running`;
+    case "COMPLETED":
+      return `${subject} completed`;
+    case "FAILED":
+      return `${subject} failed`;
+    default:
+      return `${subject} updated`;
+  }
+}
+
 export default async function DashboardPage() {
   let stats;
   let errorMessage = "";
@@ -84,6 +104,12 @@ export default async function DashboardPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{run.websiteName}</p>
+                    <p className="mt-0.5 text-sm text-gray-600">
+                      {getRecentActivityLabel(run.type, run.status)}
+                      {run.hasChanges && run.status === "COMPLETED" && (
+                        <span className="text-orange-600"> with changes detected</span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {new Date(run.createdAt).toLocaleString()}
                     </p>

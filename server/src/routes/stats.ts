@@ -4,6 +4,17 @@ import { baselineQueue, scanQueue, emailQueue } from "../queues/index";
 
 const router = Router();
 
+async function getQueueCountSafely(getCount: () => Promise<number>): Promise<number> {
+  try {
+    return await Promise.race([
+      getCount(),
+      new Promise<number>((resolve) => setTimeout(() => resolve(0), 3000)),
+    ]);
+  } catch {
+    return 0;
+  }
+}
+
 router.get("/", async (_req: Request, res: Response) => {
   const [
     websiteCount,
@@ -30,8 +41,8 @@ router.get("/", async (_req: Request, res: Response) => {
         pageResults: { select: { hasChanges: true, status: true } },
       },
     }),
-    baselineQueue.getWaitingCount(),
-    scanQueue.getWaitingCount(),
+    getQueueCountSafely(() => baselineQueue.getWaitingCount()),
+    getQueueCountSafely(() => scanQueue.getWaitingCount()),
   ]);
 
   res.json({

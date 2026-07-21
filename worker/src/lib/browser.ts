@@ -24,6 +24,10 @@ const CAPTURE_TIMEOUT_MS = parseInt(
   process.env.SCREENSHOT_CAPTURE_TIMEOUT_MS ?? "45000",
   10
 );
+const NAVIGATION_RETRY_COUNT = parseInt(
+  process.env.SCREENSHOT_NAVIGATION_RETRY_COUNT ?? "3",
+  10
+);
 const MAX_SCROLL_STEPS = parseInt(process.env.SCREENSHOT_MAX_SCROLL_STEPS ?? "24", 10);
 const FULL_PAGE_CAPTURE = (process.env.SCREENSHOT_FULL_PAGE ?? "false") === "true";
 
@@ -172,6 +176,64 @@ async function hydrateLazyContent(
   await page.waitForTimeout(1000);
 }
 
+function isNavigationTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "TimeoutError" ||
+    error.message.includes("Timeout") ||
+    error.message.includes("timed out")
+  );
+}
+
+async function gotoWithRetries(
+  page: Awaited<ReturnType<BrowserContext["newPage"]>>,
+  url: string
+): Promise<void> {
+  const maxAttempts = Math.max(1, NAVIGATION_RETRY_COUNT);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      if (attempt === 1) {
+        console.log(`[browser] goto ${url} (attempt ${attempt}/${maxAttempts})`);
+        await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: NAVIGATION_TIMEOUT_MS,
+        });
+      } else {
+        console.log(`[browser] reload ${url} (attempt ${attempt}/${maxAttempts})`);
+        await page.reload({
+          waitUntil: "domcontentloaded",
+          timeout: NAVIGATION_TIMEOUT_MS,
+        });
+      }
+
+      return;
+    } catch (error) {
+      lastError = error;
+
+      if (!isNavigationTimeout(error) || attempt === maxAttempts) {
+        break;
+      }
+
+      console.warn(
+        `[browser] navigation timeout for ${url} on attempt ${attempt}/${maxAttempts}; retrying with reload`
+      );
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  const baseMessage =
+    lastError instanceof Error ? lastError.message : `Navigation failed for ${url}`;
+
+  throw new Error(
+    `${baseMessage} after ${maxAttempts} attempt(s) including reload retries`
+  );
+}
+
 async function freezePageForCapture(page: Awaited<ReturnType<BrowserContext["newPage"]>>) {
   await page.addStyleTag({
     content: `
@@ -265,11 +327,7 @@ export async function takeScreenshot(opts: ScreenshotOptions): Promise<CapturedS
       }
     });
 
-    console.log(`[browser] goto ${opts.url}`);
-    await page.goto(opts.url, {
-      waitUntil: "domcontentloaded",
-      timeout: NAVIGATION_TIMEOUT_MS,
-    });
+    await gotoWithRetries(page, opts.url);
 
     console.log(`[browser] loaded ${opts.url}`);
     await waitForPageToFullyLoad(page);

@@ -89,7 +89,7 @@ export async function processScan(
     typeof (config as { intervalMinutes?: unknown } | null)?.intervalMinutes === "number"
       ? ((config as { intervalMinutes?: number }).intervalMinutes ?? null)
       : null;
-  const threshold = config?.threshold ?? 0.01;
+  const threshold = config?.threshold ?? 0.3;
   const viewportWidth = config?.viewportWidth ?? 1280;
   const viewportHeight = config?.viewportHeight ?? 720;
 
@@ -221,13 +221,13 @@ export async function processScan(
 
   await job.updateProgress(100);
 
-  const notificationEmail = process.env.NOTIFICATION_EMAIL;
-  if (notificationEmail && (changedPages > 0 || hasError)) {
+  const cliqWebhookUrl = process.env.CLIQ_WEBHOOK_URL;
+  if (cliqWebhookUrl && (changedPages > 0 || hasError)) {
     const emailData: EmailJobData = {
       type: changedPages > 0 ? "VISUAL_CHANGE" : "FAILURE",
       websiteId,
       scanRunId,
-      recipient: notificationEmail,
+      recipient: "zoho-cliq",
       websiteName: scanRun.website.name,
       changedPages,
       totalPages: scanRun.pageResults.length,

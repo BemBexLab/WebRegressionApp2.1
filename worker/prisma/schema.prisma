@@ -42,7 +42,7 @@ model ScanConfig {
   id            String   @id @default(cuid())
   websiteId     String   @unique
   intervalMinutes Int    @default(20)
-  threshold     Float    @default(0.01)
+  threshold     Float    @default(0.3)
   viewportWidth Int      @default(1280)
   viewportHeight Int     @default(720)
   enabled       Boolean  @default(true)

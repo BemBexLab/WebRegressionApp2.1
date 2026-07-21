@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { api } from "../../lib/api";
 import { Website } from "../../lib/types";
+import NextScanTimer from "../../components/NextScanTimer";
 import { StatusBadge } from "../../components/StatusBadge";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,11 @@ export default async function WebsitesPage() {
                   Last scan: {new Date(site.lastScan.createdAt).toLocaleString()}
                 </p>
               )}
+              <NextScanTimer
+                nextScanAt={site.nextScanAt}
+                nextScanStatus={site.nextScanStatus}
+                compact
+              />
             </Link>
           ))}
         </div>

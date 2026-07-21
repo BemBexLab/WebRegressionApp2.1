@@ -25,7 +25,7 @@ function pngToRawPixels(pngBuffer: Buffer): { data: Buffer; width: number; heigh
 export async function compareScreenshots(
   baselineBuffer: Buffer,
   latestBuffer: Buffer,
-  threshold: number = 0.01
+  threshold: number = 0.3
 ): Promise<CompareResult> {
   const baselineMeta = await sharp(baselineBuffer).metadata();
   const latestMeta = await sharp(latestBuffer).metadata();

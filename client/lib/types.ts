@@ -5,7 +5,7 @@ export type EmailNotificationType = "SCAN_COMPLETE" | "VISUAL_CHANGE" | "FAILURE
 export interface ScanConfig {
   id: string;
   websiteId: string;
-  intervalHours: number;
+  intervalMinutes: number;
   threshold: number;
   viewportWidth: number;
   viewportHeight: number;
@@ -35,6 +35,8 @@ export interface Website {
   url: string;
   createdAt: string;
   updatedAt: string;
+  nextScanAt?: string | null;
+  nextScanStatus?: string | null;
   pageCount?: number;
   lastScan?: ScanRunSummary | null;
   pages?: WebsitePage[];

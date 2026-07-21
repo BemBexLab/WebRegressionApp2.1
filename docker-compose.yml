@@ -37,7 +37,7 @@ services:
         exec redis-server
         --appendonly yes
         --appendfsync everysec
-        --protected-mode yes
+        --protected-mode no
         ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}
     volumes:
       - redis_data:/data
@@ -101,7 +101,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       PORT: 4000
       MAX_PAGES_PER_SITE: ${MAX_PAGES_PER_SITE:-80}
-      DIFF_THRESHOLD: ${DIFF_THRESHOLD:-0.01}
+      DIFF_THRESHOLD: ${DIFF_THRESHOLD:-0.3}
     ports:
       - "4000:4000"
     healthcheck:
@@ -139,13 +139,8 @@ services:
       SUPABASE_STORAGE_URL: http://supabase-storage:5000
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
       SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-screenshots}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      FROM_EMAIL: ${FROM_EMAIL:-noreply@webregression.local}
-      NOTIFICATION_EMAIL: ${NOTIFICATION_EMAIL:-}
+      CLIQ_WEBHOOK_URL: ${CLIQ_WEBHOOK_URL:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
       AUTO_SCAN_INTERVAL_MINUTES: ${AUTO_SCAN_INTERVAL_MINUTES:-20}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     shm_size: "1gb"
@@ -163,6 +158,9 @@ services:
         ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
         API_URL: http://api:4000
         STORAGE_URL: http://supabase-storage:5000
+        LOGIN_USER: ${LOGIN_USER:-admin}
+        LOGIN_PASSWORD: ${LOGIN_PASSWORD:-}
+        AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-change-me-session-secret}
     restart: unless-stopped
     depends_on:
       api:
@@ -171,6 +169,9 @@ services:
       API_URL: http://api:4000
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
       STORAGE_URL: http://supabase-storage:5000
+      LOGIN_USER: ${LOGIN_USER:-admin}
+      LOGIN_PASSWORD: ${LOGIN_PASSWORD:-}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-change-me-session-secret}
     ports:
       - "3001:3000"
 
