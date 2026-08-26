@@ -95,6 +95,7 @@ export async function processScan(
 
   let hasError = false;
   let changedPages = 0;
+  let maxDiffScore = 0;
 
   for (let i = 0; i < scanRun.pageResults.length; i++) {
     const result = scanRun.pageResults[i];
@@ -145,6 +146,7 @@ export async function processScan(
         );
         await yieldToEventLoop();
         diffScore = comparison.diffScore;
+        maxDiffScore = Math.max(maxDiffScore, diffScore);
         diffPixels = comparison.diffPixels;
         hasChanges = comparison.hasChanges;
 
@@ -221,16 +223,24 @@ export async function processScan(
 
   await job.updateProgress(100);
 
-  const cliqWebhookUrl = process.env.CLIQ_WEBHOOK_URL;
-  if (cliqWebhookUrl && (changedPages > 0 || hasError)) {
+  const thresholdExceeded = maxDiffScore > threshold || changedPages > 0;
+  console.log(
+    `[scan] Alert decision for ${scanRun.website.name}: max diff ${(maxDiffScore * 100).toFixed(
+      2
+    )}%, threshold ${(threshold * 100).toFixed(2)}%, changed pages ${changedPages}, has error ${hasError}`
+  );
+
+  if (thresholdExceeded || hasError) {
     const emailData: EmailJobData = {
-      type: changedPages > 0 ? "VISUAL_CHANGE" : "FAILURE",
+      type: thresholdExceeded ? "VISUAL_CHANGE" : "FAILURE",
       websiteId,
       scanRunId,
       recipient: "zoho-cliq",
       websiteName: scanRun.website.name,
       changedPages,
       totalPages: scanRun.pageResults.length,
+      diffThreshold: threshold,
+      maxDiffScore,
       error: hasError ? "One or more pages failed during the scan run." : undefined,
     };
 

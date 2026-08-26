@@ -16,6 +16,8 @@ export type EmailJobData =
       changedPages?: number;
       totalPages?: number;
       error?: string;
+      diffThreshold?: number;
+      maxDiffScore?: number;
     }
   | {
       type: "DOMAIN_EXPIRY";
@@ -31,7 +33,7 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function getMeasuredThreshold(pages: ScanReportPage[]): string {
+function getHighestDifference(pages: ScanReportPage[]): string {
   const measuredScores = pages
     .map((page) => page.diffScore)
     .filter((score) => Number.isFinite(score) && score > 0);
@@ -69,7 +71,8 @@ function buildCliqTextReport(
   websiteUrl: string,
   runType: "SCAN_COMPLETE" | "VISUAL_CHANGE" | "FAILURE",
   scanRunId: string,
-  measuredThreshold: string,
+  configuredThreshold: number,
+  highestDifference: string,
   changedPages: ScanReportPage[],
   failedPages: ScanReportPage[],
   allPages: ScanReportPage[],
@@ -80,7 +83,8 @@ function buildCliqTextReport(
     `Website: ${websiteName}`,
     `Base URL: ${websiteUrl}`,
     `Scan Run: ${scanRunId}`,
-    `Threshold: ${measuredThreshold}`,
+    `Configured threshold: ${formatPercent(configuredThreshold)}`,
+    `Highest difference: ${highestDifference}`,
     `Changed pages: ${changedPages.length}`,
     `Failed pages: ${failedPages.length}`,
     `Total pages checked: ${allPages.length}`,
@@ -221,7 +225,7 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
 
   const changedPages = allPages.filter((page) => page.hasChanges);
   const failedPages = allPages.filter((page) => page.status === "FAILED");
-  const measuredThreshold = getMeasuredThreshold(changedPages);
+  const highestDifference = getHighestDifference(allPages);
   const subject = buildSubject(type, websiteName, changedPages.length, allPages.length);
   const pdfBuffer = await createScanPdfBuffer({
     websiteName,
@@ -240,7 +244,8 @@ export async function processEmail(job: Job<EmailJobData>): Promise<void> {
     website.url,
     type,
     scanRunId,
-    measuredThreshold,
+    threshold,
+    highestDifference,
     changedPages,
     failedPages,
     allPages,

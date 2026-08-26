@@ -173,7 +173,7 @@ export async function processBaseline(
 
   await job.updateProgress(100);
 
-  if (hasError && notificationQueue && process.env.CLIQ_WEBHOOK_URL) {
+  if (hasError && notificationQueue) {
     const failedPages = scanRun.pageResults.filter((pageResult) => pageResult.status === "FAILED");
     const notificationData: EmailJobData = {
       type: "FAILURE",

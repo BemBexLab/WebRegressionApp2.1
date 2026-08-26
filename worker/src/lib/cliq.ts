@@ -37,7 +37,7 @@ function isPublicOrigin(candidate: string): boolean {
 function normalizeDashboardOrigin(origin: string): string {
   const parsed = new URL(origin);
 
-  if (isLocalOrigin(origin) && !parsed.port) {
+  if (!parsed.port) {
     parsed.port = "3001";
   }
 
@@ -45,6 +45,11 @@ function normalizeDashboardOrigin(origin: string): string {
 }
 
 function getDashboardUrl(): string {
+  const configuredPublicUrl = process.env.PUBLIC_APP_URL?.trim();
+  if (configuredPublicUrl) {
+    return normalizeDashboardOrigin(configuredPublicUrl);
+  }
+
   const configuredOrigins = (process.env.FRONTEND_URL ?? "")
     .split(",")
     .map((origin) => origin.trim())
@@ -54,7 +59,7 @@ function getDashboardUrl(): string {
     configuredOrigins.find((origin) => {
       try {
         const parsed = new URL(origin);
-        return isLocalOrigin(origin) && parsed.port === "3001";
+        return isPublicOrigin(origin) && parsed.port === "3001";
       } catch {
         return false;
       }
@@ -62,13 +67,13 @@ function getDashboardUrl(): string {
     configuredOrigins.find((origin) => {
       try {
         const parsed = new URL(origin);
-        return isLocalOrigin(origin) && Boolean(parsed.port);
+        return isLocalOrigin(origin) && parsed.port === "3001";
       } catch {
         return false;
       }
     }) ??
-    configuredOrigins.find((origin) => isLocalOrigin(origin)) ??
     configuredOrigins.find((origin) => isPublicOrigin(origin)) ??
+    configuredOrigins.find((origin) => isLocalOrigin(origin)) ??
     configuredOrigins[0];
 
   if (preferredOrigin) {
